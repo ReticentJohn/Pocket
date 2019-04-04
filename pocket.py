@@ -104,15 +104,15 @@ class message_logger():
     """
     logs = {}
     log_max = 100
-    def log(channel: discord.Channel, message: discord.Message):
+    def log(channel: discord.TextChannel, message: discord.Message):
         if not channel in message_logger.logs:
             message_logger.logs[channel] = ["" for _ in range(message_logger.log_max)]
 
         # Add to the end, delete from the beginning.
-        message_logger.logs[channel].append(message.author.id + ":" + message.content)
+        message_logger.logs[channel].append(str(message.author.id) + ":" + message.content)
         del message_logger.logs[channel][:1]
 
-    def get_logs(channel: discord.Channel) -> (str):
+    def get_logs(channel: discord.TextChannel) -> (str):
         return message_logger.logs[channel] if channel in message_logger.logs else []
 
     def remember(author: discord.User, message: str) -> bool:
@@ -137,13 +137,13 @@ class message_logger():
 
 @client.event
 async def on_ready():
-    logging.info("Logged in as " + client.user.name + " (" + client.user.id + ")")
+    logging.info("Logged in as " + client.user.name + " (" + str(client.user.id) + ")")
     c.execute("INSERT OR IGNORE INTO ignore (ignoramous) VALUES (?);", (client.user.id,))       # Ignore self, or else Pocket would respond to himself
     conn.commit()
 
 @client.event
 async def on_message(message: discord.Message):
-    logging.info(message.author.name + " (" + message.author.id + ") said \"" + message.content + "\" in " + str(message.channel))
+    logging.info(message.author.name + " (" + str(message.author.id) + ") said \"" + message.content + "\" in " + str(message.channel))
     message_logger.log(message.channel, message)
 
     # Ignore those to be ignored
@@ -153,7 +153,7 @@ async def on_message(message: discord.Message):
         response = respond(message, content.strip(), addressed)
         if response and not shutting_up.is_shut():                          # Only send_message if there is a response; most of the time, there won't be.
             time.sleep(.5)
-            await client.send_message(message.channel, populate(message, response))
+            await message.channel.send(populate(message, response)) # client.send_message(message.channel, populate(message, response))
 
 
 def process_meta(message: discord.Message) -> (bool, str):
@@ -162,8 +162,8 @@ def process_meta(message: discord.Message) -> (bool, str):
     If he was addressed, returns true and the rest of the message. If not, then return false and the message.
     """
     # Remove the prefix if addressed.
-    if message.content.lower().startswith("pocket,") or message.content.lower().startswith("pocket:"):
-        response = (True, message.content[7:])      # Remove the prefix ("pocket," or "Pocket:"), which is 7 chars long
+    if message.content.lower().startswith("dot,") or message.content.lower().startswith("dot:"):
+        response = (True, message.content[4:])      # Remove the prefix ("dot," or "Dot:"), which is 4 chars long
     else: response = (False, message.content)
 
     return response
@@ -214,8 +214,8 @@ def process_commands(message: str, context: discord.Message=None) -> str or None
 
             # Sanitize the trigger some.
             tidbit[0] = sanitize_message(tidbit[0])                    # Lowercase the trigger; it has to be case insensitive.
-            if re.match('^pocket[:,]', tidbit[0]):                     # Remove "pocket," or "pocket:" if for some reason it's in the trigger
-                tidbit[0] = tidbit[0][7:].strip()
+            if re.match('^dot[:,]', tidbit[0]):                     # Remove "pocket," or "pocket:" if for some reason it's in the trigger
+                tidbit[0] = tidbit[0][4:].strip()
 
             c.execute("INSERT OR FAIL INTO comments (triggers, remark, protected) VALUES (?, ?, 0);", tidbit)
             conn.commit()
@@ -291,10 +291,10 @@ def process_inventory_triggers(message: str, addressed: bool) -> str or None:
     # Addressed commands
     addressed_give = [re.compile("(?:have|take) (.+)$", re.IGNORECASE)]
     # Non-addressed commands
-    unaddressed_give = [re.compile("puts (.+) in pocket$", re.IGNORECASE),
-                        re.compile("gives pocket (.+)$", re.IGNORECASE),
-                        re.compile("gives (.+) to pocket$", re.IGNORECASE),
-                        re.compile("(?:have|take) (.+), pocket$", re.IGNORECASE)]
+    unaddressed_give = [re.compile("puts (.+) in dot$", re.IGNORECASE),
+                        re.compile("gives dot (.+)$", re.IGNORECASE),
+                        re.compile("gives (.+) to dot$", re.IGNORECASE),
+                        re.compile("(?:have|take) (.+), dot$", re.IGNORECASE)]
     for command in unaddressed_give + addressed_give if addressed else unaddressed_give:
         given_thing = command.match(message)
         if given_thing:
@@ -310,7 +310,7 @@ def process_inventory_triggers(message: str, addressed: bool) -> str or None:
     ### LIST INVENTORY commands ###
     if re.compile("inventory").match(message):
         if inventory.size() > 1:
-            response = "_Pocket contains "
+            response = "_Dot contains "
             for item in inventory.list()[:-1]: response += (item + ", ")
             response += "and " + inventory.list()[-1] + "._"
             return response
@@ -377,7 +377,7 @@ def populate(context: discord.Message, response: str) -> str:
     response = response.replace("$who", context.author.name)
 
     # -- $someone : replaces with a random online user
-    online_peeps = list(context.server.members) if context.server else [context.author]     # In case of PM
+    online_peeps = list(context.channel.members) if context.channel else [context.author]     # In case of PM
     response = response.replace("$someone", random.choice(online_peeps).name)
 
     # -- $item : replaces with a random item in the inventory, if there is one.
